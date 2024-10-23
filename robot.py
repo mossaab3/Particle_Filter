@@ -1,50 +1,62 @@
 import numpy as np
 
 class Robot:
+    def __init__(self, x=0, y=0, theta=0):
+        self.x = x
+        self.y = y
+        self.theta = theta  # Orientation in radians
 
+    def move(self, dx, dy):
+        self.x += dx
+        self.y += dy
 
-    def __init__(self, initial_position, max_dimensions=[10.0, 10.0]):
-        """
-        Initialize the robot in the room.
-
-        :param initial_position: (x, y) initial position of the robot
-        :param room: A Room object representing the environment
-        """
-        self.position = np.array(initial_position)
-        self.max_width = max_dimensions[0]
-        self.max_height = max_dimensions[1]
-
-
-    def move(self, delta):
-        """
-        Move the robot by a given delta.
-
-        :param delta: (dx, dy) change in position
-        """
-        new_position = self.position + np.array(delta)
-
-        # Ensure robot doesn't move outside the room boundaries
-        new_position = np.clip(new_position, [0, 0], [self.max_width, self.max_height])
-        self.position = new_position
-
+    def rotate(self, dtheta):
+        self.theta += dtheta
 
     def get_position(self):
+        return (self.x, self.y, self.theta)
+
+    def lidar_scan(self, walls, max_range=10, resolution=360):
+        """ Simulates a 360-degree LiDAR scan with a given resolution.
+        - walls: list of wall segments [(x1, y1, x2, y2), ...]
+        - max_range: maximum sensing range of the LiDAR
+        - resolution: number of rays (e.g., 360 for 1 degree steps)
         """
-        Get the current position of the robot.
+        angles = np.linspace(0, 2 * np.pi, resolution)  # Angles from 0 to 2π
+        distances = np.full(resolution, max_range)  # Initialize distances to max_range
+        
+        for i, angle in enumerate(angles):
+            ray_x = self.x
+            ray_y = self.y
+            for wall in walls:
+                x1, y1, x2, y2 = wall
+                intersection = self._ray_wall_intersection(ray_x, ray_y, angle, x1, y1, x2, y2)
+                if intersection:
+                    distance = np.hypot(intersection[0] - self.x, intersection[1] - self.y)
+                    distances[i] = min(distances[i], distance)
+
+        return distances + np.random.normal(0, 0.05, resolution)  # Adding noise to each distance
+
+    def _ray_wall_intersection(self, rx, ry, angle, x1, y1, x2, y2):
+        """ Calculate intersection between a ray and a wall segment.
+        - rx, ry: ray origin (robot's position)
+        - angle: ray angle
+        - x1, y1, x2, y2: wall segment coordinates
+        Returns: (ix, iy) intersection point or None if no intersection.
         """
-        return self.position
+        dx = np.cos(angle)
+        dy = np.sin(angle)
 
-print("Robot class defined successfully.")
-# Example of how to move the robot
-if __name__ == "__main__":
-    from room import Room
+        denom = (x1 - x2) * dy - (y1 - y2) * dx
+        if denom == 0:
+            return None  # Parallel, no intersection
 
-    # Create a room and a robot
-    room = Room(10, 8)
-    robot = Robot(initial_position=(5, 5), room=room)
+        t = ((x1 - rx) * dy - (y1 - ry) * dx) / denom
+        u = -((x1 - x2) * (y1 - ry) - (y1 - y2) * (x1 - rx)) / denom
 
-    # Simulate moving the robot
-    robot.move((1, 0))  # Move right
-    robot_position = tuple(robot.get_position())
-    room.draw(robot_position=robot_position)
-    print("Robot position:", robot.get_position())
+        if 0 <= t <= 1 and u >= 0:
+            ix = x1 + t * (x2 - x1)
+            iy = y1 + t * (y2 - y1)
+            return (ix, iy)
+
+        return None
